@@ -194,6 +194,93 @@ class TaxonomyHierarchyAnalyzer {
   }
 
   /**
+   * Get data for entities referencing a term or its descendants.
+   *
+   * @param \Drupal\taxonomy\TermInterface $term
+   *   The term.
+   * @param bool $descendants_only
+   *   Get only entities referencing descendant terms. Optional, defaults to
+   *   FALSE where entities referencing the original term are included.
+   *
+   * @return array
+   *   Entity data for entities referencing the term or its descendants.
+   */
+  public function getReferencingEntities(TermInterface $term, bool $descendants_only = FALSE): array {
+    $fields = $this->getTaxonomyReferenceFields($term->bundle());
+    if (empty($fields)) {
+      return [];
+    }
+
+    $unions = array_map(function ($field) {
+      return sprintf("SELECT '%s' AS entity_type, f.entity_id FROM {%s} f INNER JOIN descendants d ON f.%s = d.tid", $field['entity_type'], $field['table'], $field['column']);
+    }, $fields);
+
+    $entity_types = array_unique(array_column($fields, 'entity_type'));
+    $entity_joins = [];
+    $label_columns = $bundle_columns = [];
+
+    foreach ($entity_types as $entity_type) {
+      $table_info = $this->getEntityTableInfo($entity_type);
+      if ($table_info) {
+        $alias = $table_info['alias'];
+        $entity_joins[] = sprintf(
+          "LEFT JOIN {%s} %s ON r.entity_type = '%s' AND r.entity_id = %s.%s",
+          $table_info['table'],
+          $alias,
+          $entity_type,
+          $alias,
+          $table_info['id_column']
+        );
+        $label_columns[] = "{$alias}.{$table_info['label_column']}";
+        if ($table_info['bundle_column']) {
+          $bundle_columns[] = "{$alias}.{$table_info['bundle_column']}";
+        }
+      }
+    }
+
+    $label_coalesce = 'COALESCE(' . implode(', ', $label_columns) . ') AS label';
+    $bundle_coalesce = !empty($bundle_columns)
+      ? 'COALESCE(' . implode(', ', $bundle_columns) . ') AS bundle'
+      : "'' AS bundle";
+
+    if ($descendants_only) {
+      $anchor = "SELECT entity_id AS tid FROM {taxonomy_term__parent} WHERE parent_target_id = :tid";
+    }
+    else {
+      $anchor = "SELECT CAST(:tid AS UNSIGNED) AS tid";
+    }
+
+    $query = sprintf(
+      "WITH RECURSIVE descendants AS (
+        %s
+
+        UNION ALL
+
+        SELECT ttp.entity_id
+        FROM {taxonomy_term__parent} ttp
+        INNER JOIN descendants d ON ttp.parent_target_id = d.tid
+      ),
+      refs AS (
+        %s
+      )
+      SELECT DISTINCT
+        r.entity_type,
+        r.entity_id,
+        %s,
+        %s
+      FROM refs r
+      %s",
+      $anchor,
+      implode("\nUNION ALL\n", $unions),
+      $bundle_coalesce,
+      $label_coalesce,
+      implode("\n", $entity_joins)
+    );
+
+    return $this->database->query($query, [':tid' => $term->id()])->fetchAll();
+  }
+
+  /**
    * Discover entity reference fields targeting a vocabulary.
    *
    * @param string $vid
