@@ -265,7 +265,7 @@ class TaxonomyHierarchyAnalyzer {
    *   Array with keys: table, id_column, label_column, alias.
    *   NULL if entity type has no label or data table.
    */
-  protected function getEntityLabelInfo(string $entity_type_id): ?array {
+  protected function getEntityTableInfo(string $entity_type_id): ?array {
     try {
       $definition = $this->entityTypeManager->getDefinition($entity_type_id);
     }
@@ -292,6 +292,7 @@ class TaxonomyHierarchyAnalyzer {
       'table' => $data_table,
       'id_column' => $id_key,
       'label_column' => $label_key,
+      'bundle_column' => $definition->getKey('bundle') ?: NULL,
       'alias' => $alias,
     ];
   }
