@@ -4,6 +4,7 @@ namespace Kerasai\TaxonomyHierarchyAnalyzer;
 
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
+use Drupal\taxonomy\TermInterface;
 
 /**
  * Taxonomy hierarchy analysis utility.
@@ -134,6 +135,58 @@ class TaxonomyHierarchyAnalyzer {
   SQL;
 
     return $this->database->query($query, [':tid' => $tid])->fetchAll();
+  }
+
+  /**
+   * Count entities referencing a term or its descendants.
+   *
+   * @param \Drupal\taxonomy\TermInterface $term
+   *   The term.
+   * @param bool $descendants_only
+   *   Only count entities referencing descendant terms. Optional, defaults to
+   *   FALSE where entities referencing the original term are included.
+   *
+   * @return int
+   *   Count of entities referencing a term or its descendants.
+   */
+  public function countReferencingEntities(TermInterface $term, bool $descendants_only = FALSE): int {
+    $fields = $this->getTaxonomyReferenceFields($term->bundle());
+    if (empty($fields)) {
+      return 0;
+    }
+
+    $unions = array_map(function ($field) {
+      return sprintf("SELECT '%s' AS entity_type, f.entity_id FROM {%s} f INNER JOIN descendants d ON f.%s = d.tid", $field['entity_type'], $field['table'], $field['column']);
+    }, $fields);
+
+    if ($descendants_only) {
+      $anchor = "SELECT entity_id AS tid FROM {taxonomy_term__parent} WHERE parent_target_id = :tid";
+    }
+    else {
+      $anchor = "SELECT CAST(:tid AS UNSIGNED) AS tid";
+    }
+
+    $query = sprintf(
+      "WITH RECURSIVE descendants AS (
+      %s
+
+      UNION ALL
+
+      SELECT ttp.entity_id
+      FROM {taxonomy_term__parent} ttp
+      INNER JOIN descendants d ON ttp.parent_target_id = d.tid
+    ),
+    refs AS (
+      %s
+    )
+    SELECT COUNT(*) FROM (
+      SELECT DISTINCT entity_type, entity_id FROM refs
+    ) unique_refs",
+      $anchor,
+      implode("\nUNION ALL\n", $unions)
+    );
+
+    return (int) $this->database->query($query, [':tid' => $term->id()])->fetchField();
   }
 
   /**
