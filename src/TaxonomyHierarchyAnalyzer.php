@@ -4,6 +4,7 @@ namespace Kerasai\TaxonomyHierarchyAnalyzer;
 
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\taxonomy\TermInterface;
 
 /**
@@ -18,10 +19,13 @@ class TaxonomyHierarchyAnalyzer {
    *   The database.
    * @param \Drupal\Core\Entity\EntityFieldManagerInterface $entityFieldManager
    *   Entity field manager.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
+   *   Entity type manager.
    */
   public function __construct(
     protected readonly Connection $database,
     protected readonly EntityFieldManagerInterface $entityFieldManager,
+    protected readonly EntityTypeManagerInterface $entityTypeManager,
   ) {
     // No op.
   }
@@ -32,7 +36,7 @@ class TaxonomyHierarchyAnalyzer {
    * @return static
    */
   public static function create() {
-    return new self(\Drupal::database(), \Drupal::service('entity_field.manager'));
+    return new self(\Drupal::database(), \Drupal::service('entity_field.manager'), \Drupal::entityTypeManager());
   }
 
   /**
@@ -249,6 +253,47 @@ class TaxonomyHierarchyAnalyzer {
     }
 
     return $fields;
+  }
+
+  /**
+   * Get entity table info.
+   *
+   * @param string $entity_type_id
+   *   The entity type ID.
+   *
+   * @return array|null
+   *   Array with keys: table, id_column, label_column, alias.
+   *   NULL if entity type has no label or data table.
+   */
+  protected function getEntityLabelInfo(string $entity_type_id): ?array {
+    try {
+      $definition = $this->entityTypeManager->getDefinition($entity_type_id);
+    }
+    catch (\Exception $e) {
+      return NULL;
+    }
+
+    if (!$data_table = $definition->getDataTable() ?? $definition->getBaseTable()) {
+      return NULL;
+    }
+
+    if (!$label_key = $definition->getKey('label')) {
+      return NULL;
+    }
+
+    if (!$id_key = $definition->getKey('id')) {
+      return NULL;
+    }
+
+    // Generate short alias from entity type.
+    $alias = substr(preg_replace('/[^a-z]/', '', $entity_type_id), 0, 3) . 'fd';
+
+    return [
+      'table' => $data_table,
+      'id_column' => $id_key,
+      'label_column' => $label_key,
+      'alias' => $alias,
+    ];
   }
 
 }
