@@ -145,7 +145,7 @@ class TaxonomyHierarchyAnalyzer {
    * @return array
    *   Array of field info with keys: entity_type, field_name, table, column.
    */
-  public function getTaxonomyReferenceFields(string $vid): array {
+  public function getTaxonomyReferenceFields(string $vid, bool $include_parent_field = FALSE): array {
     $fields = [];
     $field_map = $this->entityFieldManager->getFieldMapByFieldType('entity_reference');
 
@@ -175,7 +175,7 @@ class TaxonomyHierarchyAnalyzer {
           // Exclude if we're configured to target specific bundles, but not
           // our bundle (vocabulary).
           $target_bundles = $settings['handler_settings']['target_bundles'] ?? [];
-          if ($target_bundles && !in_array($bundle, $target_bundles)) {
+          if ($target_bundles && !in_array($vid, $target_bundles)) {
             continue;
           }
 
@@ -187,6 +187,10 @@ class TaxonomyHierarchyAnalyzer {
           ];
         }
       }
+    }
+
+    if (!$include_parent_field && !empty($fields['taxonomy_term__parent'])) {
+      unset($fields['taxonomy_term__parent']);
     }
 
     return $fields;
