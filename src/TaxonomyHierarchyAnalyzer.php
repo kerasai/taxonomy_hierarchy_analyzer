@@ -143,7 +143,7 @@ class TaxonomyHierarchyAnalyzer {
    *   Vocabulary ID.
    * @param bool $include_parent_field
    *   Include taxonomy_term parent field. Optional, defaults to FALSE.
-
+   *
    * @return array
    *   Array of field info with keys: entity_type, field_name, table, column.
    */
